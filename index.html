@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AB Test Calculator — unit-level</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!-- 44px true-black bar: the only place pure black appears. -->
+<nav class="global-nav">
+  <div class="gnav-inner">
+    <span class="gnav-brand">AB Calculator</span>
+    <div class="gnav-links">
+      <a href="#config">Config</a>
+      <a href="#overall">Results</a>
+      <a href="#overtime">Over time</a>
+      <a href="#segments">Segments</a>
+    </div>
+    <span class="gnav-spacer"></span>
+    <button type="button" class="btn-dark-utility" id="nav-open">Open CSV</button>
+  </div>
+</nav>
+
+<!-- Frosted sub-nav with the persistent right-aligned primary CTA. -->
+<div class="sub-nav">
+  <div class="subnav-inner">
+    <span class="subnav-title">Post-Analysis</span>
+    <span class="subnav-meta" id="subnav-meta"></span>
+    <span class="subnav-spacer"></span>
+    <div class="subnav-actions">
+      <a class="subnav-link" href="#config" id="subnav-config" hidden>Configure</a>
+      <button type="button" class="btn-pill compact" id="nav-run" disabled>Run analysis</button>
+    </div>
+  </div>
+</div>
+
+<main>
+
+  <!-- hero tile -->
+  <section class="tile tile-white hero">
+    <div class="wrap">
+      <h1 class="t-hero">AB Test Calculator for Post Analysis.</h1>
+      <p class="t-lead">
+        Input <code>date &times; unit</code>. Calculated per unit &mdash; a unit that converts
+        at least once within the experiment window is counted as converted.
+      </p>
+
+      <div class="dropzone" id="dropzone" tabindex="0" role="button"
+           aria-label="Choose or drop a CSV file">
+        <p class="t-tagline dz-title">Drop your experiment CSV</p>
+        <p class="t-body dz-sub">or click to choose a file</p>
+        <p class="dz-file" id="dz-file"></p>
+      </div>
+
+      <p class="t-caption hero-note">
+        Parsing and calculation run entirely in the browser. No data is sent out.
+      </p>
+      <input type="file" id="file-input" accept=".csv,.tsv,text/csv" class="sr-only">
+    </div>
+  </section>
+
+  <!-- configurator tile -->
+  <section class="tile tile-parchment" id="config" hidden>
+    <div class="wrap">
+      <div class="tile-head">
+        <p class="eyebrow">Configuration</p>
+        <h2 class="t-display-lg">Columns &amp; metrics</h2>
+        <p class="t-body">
+          Auto-detected from the CSV header. Everything can be changed.
+        </p>
+      </div>
+
+      <form id="cfg-form">
+        <div class="cfg-grid">
+
+          <div class="ucard">
+            <p class="t-body-strong ucard-title">Structure</p>
+            <p class="t-caption ucard-hint">Columns that determine granularity.</p>
+
+            <div class="field">
+              <label for="cfg-unit">Unit column</label>
+              <select id="cfg-unit"></select>
+              <p class="t-caption field-hint">Rows are collapsed into one row per value here.</p>
+            </div>
+
+            <div class="field">
+              <label for="cfg-variant">Variant column</label>
+              <select id="cfg-variant"></select>
+            </div>
+
+            <div class="field">
+              <label for="cfg-control">Control label</label>
+              <select id="cfg-control"></select>
+              <p class="t-caption field-hint">Other variants are treated as treatment.</p>
+            </div>
+
+            <div class="field">
+              <label for="cfg-date">Date column</label>
+              <select id="cfg-date"></select>
+              <p class="t-caption field-hint">
+                Collapsed, not analysed per-date. Used for the over-time chart and
+                to pick segment values from the earliest date.
+              </p>
+            </div>
+          </div>
+
+          <div class="ucard">
+            <p class="t-body-strong ucard-title">Metrics</p>
+            <p class="t-caption ucard-hint">
+              <strong>binary</strong> &rarr; MAX per unit, two-proportion z-test.
+              <strong>continuous</strong> &rarr; SUM per unit, Welch t-test.
+            </p>
+            <div class="opt-list scroll" id="cfg-metrics"></div>
+          </div>
+
+          <div class="ucard">
+            <p class="t-body-strong ucard-title">Segments</p>
+            <p class="t-caption ucard-hint">One breakdown table per selected column.</p>
+            <div class="opt-list scroll" id="cfg-segments"></div>
+          </div>
+
+          <div class="ucard">
+            <p class="t-body-strong ucard-title">Statistics</p>
+            <p class="t-caption ucard-hint">Test threshold and traffic split assumptions.</p>
+
+            <div class="field field-pair">
+              <div>
+                <label for="cfg-alpha">Alpha</label>
+                <input type="number" id="cfg-alpha" value="0.05" min="0.0001" max="0.5" step="0.01">
+              </div>
+              <div>
+                <label for="cfg-smalln">Fade N &lt;</label>
+                <input type="number" id="cfg-smalln" value="100" min="0" step="10">
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Expected split (SRM)</label>
+              <div id="cfg-ratio"></div>
+              <p class="t-caption field-hint">
+                Relative weights. Leave equal unless the design is intentionally unbalanced.
+              </p>
+            </div>
+
+            <div class="field">
+              <label for="cfg-correction">Multiple comparisons</label>
+              <select id="cfg-correction">
+                <option value="bh" selected>Benjamini&ndash;Hochberg (FDR)</option>
+                <option value="bonferroni">Bonferroni (FWER)</option>
+                <option value="none">none</option>
+              </select>
+              <p class="t-caption field-hint">
+                Reported as an adjusted p-value; alpha above is never divided. Applied across
+                success metrics &times; treatment arms, and within each segment table.
+                <strong>Guardrails are never corrected</strong> &mdash; raising their bar would
+                hide real regressions.
+              </p>
+            </div>
+
+            <div class="field">
+              <label>Options</label>
+              <label class="toggle">
+                <input type="checkbox" id="cfg-contaminated">
+                <span class="t-caption">
+                  Include units seen in more than one variant (assign by earliest date)
+                </span>
+              </label>
+              <label class="toggle">
+                <input type="checkbox" id="cfg-correction-verdict">
+                <span class="t-caption">
+                  Use the adjusted p-value for the verdict, not just as a reference
+                </span>
+              </label>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="cfg-actions">
+          <button type="submit" class="btn-hero">Run analysis</button>
+          <button type="button" class="btn-pill-ghost" id="cfg-reset">Reset to detected</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <div id="results-body"></div>
+
+</main>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-cols">
+      <div class="footer-col">
+        <h3>Granularity</h3>
+        <ul>
+          <li>Binary &rarr; MAX per unit</li>
+          <li>Continuous &rarr; SUM per unit</li>
+          <li>Segment &rarr; earliest date</li>
+          <li>Unit in &gt;1 variant &rarr; excluded</li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h3>Statistical test</h3>
+        <ul>
+          <li>Binary &rarr; two-proportion z-test</li>
+          <li>Continuous &rarr; Welch t-test</li>
+          <li>SRM &rarr; chi-square goodness-of-fit</li>
+          <li>Bonferroni &rarr; optional note</li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h3>Export</h3>
+        <ul>
+          <li>TSV &rarr; paste into Lark / Docs</li>
+          <li>CSV &rarr; raw numbers</li>
+          <li>HTML &rarr; self-contained report</li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h3>Test</h3>
+        <ul>
+          <li><code>node test/run-tests.js</code></li>
+          <li>140 assertions</li>
+          <li>Golden numbers from the original export</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-legal">
+      <p class="t-fine">
+        All calculations run in the browser. No experiment data is sent out.
+      </p>
+      <p class="t-fine">
+        Results and export files contain experiment figures &mdash; treat them as internal.
+      </p>
+    </div>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="chart-tip" id="chart-tip" aria-hidden="true"></div>
+
+<!--
+  Classic scripts on purpose, NOT type="module": ES modules are blocked by CORS
+  on file://, which would break opening index.html straight from Finder.
+  Load order matters — each file reads window.AB from the ones before it.
+-->
+<script src="js/stats.js"></script>
+<script src="js/csv.js"></script>
+<script src="js/aggregate.js"></script>
+<script src="js/analyze.js"></script>
+<script src="js/render.js"></script>
+<script src="js/export.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
